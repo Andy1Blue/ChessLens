@@ -46,6 +46,34 @@ function winPct(w, l, d) {
   return Math.round(((w || 0) / total) * 100);
 }
 
+function normalizeUsername(raw) {
+  return String(raw || '').trim().toLowerCase();
+}
+
+function isValidUsername(username) {
+  return /^[a-z0-9_-]{1,50}$/i.test(username);
+}
+
+function formatCompareMetric(modeStats) {
+  if (!modeStats) return '—';
+  const rating = modeStats.rating ? `${modeStats.rating}` : '—';
+  const pct = modeStats.winPercent !== null ? `${modeStats.winPercent}%` : '—';
+  return `${rating} (${pct})`;
+}
+
+function getModeSnapshot(stats, key) {
+  const mode = stats?.[key];
+  if (!mode) return null;
+  const record = mode.record || {};
+  const win = record.win || 0;
+  const loss = record.loss || 0;
+  const draw = record.draw || 0;
+  return {
+    rating: mode.last?.rating || null,
+    winPercent: winPct(win, loss, draw),
+  };
+}
+
 function gameCard(label, icon, data) {
   if (!data) return '';
   const r = data.record || {};
@@ -94,13 +122,23 @@ function gameCard(label, icon, data) {
     </div>`;
 }
 
-function buildPage(username, stats, error) {
+function buildPage({
+  username,
+  stats,
+  error,
+  compareUsername,
+  compareStats,
+  compareError,
+}) {
   const gameTypes = [
     { key: 'chess_bullet',  label: 'Bullet',  icon: '⚡' },
     { key: 'chess_blitz',   label: 'Blitz',   icon: '🔥' },
     { key: 'chess_rapid',   label: 'Rapid',   icon: '⏱' },
     { key: 'chess_daily',   label: 'Daily',   icon: '📅' },
   ];
+  const hasComparisonRequest = Boolean(compareUsername);
+  const hasComparisonData = Boolean(compareUsername && compareStats);
+  const pageErrors = [error, compareError].filter(Boolean);
 
   const cards = gameTypes.map(({ key, label, icon }) =>
     gameCard(label, icon, stats?.[key])
@@ -125,6 +163,37 @@ function buildPage(username, stats, error) {
         <div class="extra-val">${esc(puzzleRush.best.score)}</div>
         <div class="extra-date">${esc(puzzleRush.best.total_attempts || '')} attempts</div>
       </div>` : ''}
+    </div>` : '';
+
+  const comparisonRows = hasComparisonData
+    ? gameTypes.map(({ key, label }) => {
+      const left = formatCompareMetric(getModeSnapshot(stats, key));
+      const right = formatCompareMetric(getModeSnapshot(compareStats, key));
+      return `
+        <tr>
+          <td>${esc(label)}</td>
+          <td>${esc(left)}</td>
+          <td>${esc(right)}</td>
+        </tr>`;
+    }).join('')
+    : '';
+
+  const comparisonHtml = hasComparisonData ? `
+    <div class="section-title">Player Comparison</div>
+    <div class="compare-card">
+      <div class="compare-head">Current rating (Win rate)</div>
+      <div class="compare-table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>${esc(username)}</th>
+              <th>${esc(compareUsername)}</th>
+            </tr>
+          </thead>
+          <tbody>${comparisonRows}</tbody>
+        </table>
+      </div>
     </div>` : '';
 
   return `<!DOCTYPE html>
@@ -313,6 +382,19 @@ function buildPage(username, stats, error) {
     .extra-val { font-size: 1.5rem; font-weight: 800; color: var(--gold); margin: 4px 0 2px; }
     .extra-date { font-size: 0.75rem; color: var(--muted); }
 
+    .compare-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px; margin-bottom: 28px;
+    }
+    .compare-head { color: var(--muted); font-size: 0.8rem; margin-bottom: 10px; }
+    .compare-table-wrap { overflow-x: auto; }
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .compare-table th, .compare-table td {
+      border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left;
+    }
+    .compare-table th { color: var(--muted); font-weight: 700; }
+    .compare-table td:first-child { font-weight: 700; }
+
     .footer {
       text-align: center; color: var(--muted); font-size: 0.75rem;
       margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border);
@@ -344,13 +426,14 @@ function buildPage(username, stats, error) {
     <h1>Chess <span>Stats</span></h1>
     <div class="subtitle">chess.com profile viewer</div>
     <form class="search-form" method="GET" action="/">
-      <input name="u" type="text" placeholder="Enter username…" value="${esc(username || '')}" autocomplete="off" spellcheck="false" />
+      <input name="u" type="text" placeholder="Player 1 username…" value="${esc(username || '')}" autocomplete="off" spellcheck="false" />
+      <input name="v" type="text" placeholder="Player 2 username (optional)..." value="${esc(compareUsername || '')}" autocomplete="off" spellcheck="false" />
       <button type="submit">Search</button>
     </form>
   </header>
 
   <div class="container">
-    ${error ? `<div class="error-box">⚠ ${esc(error)}</div>` : ''}
+    ${pageErrors.map(msg => `<div class="error-box">⚠ ${esc(msg)}</div>`).join('')}
 
     ${stats && username ? `
     <div class="player-hero">
@@ -369,13 +452,14 @@ function buildPage(username, stats, error) {
     <div class="cards-grid">${cards}</div>
 
     ${extrasHtml}
+    ${comparisonHtml}
     ` : ''}
 
-    ${!username && !error ? `
+    ${!username && !hasComparisonRequest && !pageErrors.length ? `
     <div class="home-hint">
       <div class="big">♟</div>
       Enter a chess.com username above<br/>
-      or open <code>/?u=yournickname</code>
+      or open <code>/?u=playerone&amp;v=playertwo</code>
     </div>` : ''}
 
     <div class="footer">
@@ -394,29 +478,76 @@ const server = http.createServer(async (req, res) => {
     return res.end('Not found');
   }
 
-  const username = (parsed.query.u || '').trim().toLowerCase();
+  let username = normalizeUsername(parsed.query.u);
+  let compareUsername = normalizeUsername(parsed.query.v);
+
+  if (!username && compareUsername) {
+    username = compareUsername;
+    compareUsername = '';
+  }
 
   if (!username) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(buildPage('', null, null));
+    return res.end(buildPage({
+      username: '',
+      stats: null,
+      error: null,
+      compareUsername: '',
+      compareStats: null,
+      compareError: null,
+    }));
   }
 
-  if (!/^[a-z0-9_-]{1,50}$/i.test(username)) {
+  if (!isValidUsername(username)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(buildPage(username, null, 'Invalid username format.'));
+    return res.end(buildPage({
+      username,
+      stats: null,
+      error: 'Invalid username format.',
+      compareUsername,
+      compareStats: null,
+      compareError: null,
+    }));
   }
 
-  try {
-    const stats = await fetchJSON(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/stats`);
+  if (compareUsername && !isValidUsername(compareUsername)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(buildPage(username, stats, null));
-  } catch (err) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(buildPage(username, null, err.message));
+    return res.end(buildPage({
+      username,
+      stats: null,
+      error: null,
+      compareUsername,
+      compareStats: null,
+      compareError: 'Invalid comparison username format.',
+    }));
   }
+
+  const urls = [
+    `https://api.chess.com/pub/player/${encodeURIComponent(username)}/stats`,
+  ];
+  if (compareUsername) {
+    urls.push(`https://api.chess.com/pub/player/${encodeURIComponent(compareUsername)}/stats`);
+  }
+
+  const [primaryResult, compareResult] = await Promise.allSettled(urls.map(fetchJSON));
+
+  const stats = primaryResult.status === 'fulfilled' ? primaryResult.value : null;
+  const error = primaryResult.status === 'rejected' ? primaryResult.reason.message : null;
+  const compareStats = compareUsername && compareResult?.status === 'fulfilled' ? compareResult.value : null;
+  const compareError = compareUsername && compareResult?.status === 'rejected' ? compareResult.reason.message : null;
+
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(buildPage({
+    username,
+    stats,
+    error,
+    compareUsername,
+    compareStats,
+    compareError,
+  }));
 });
 
 server.listen(PORT, () => {
   console.log(`\n♟  Chess Stats running at http://localhost:${PORT}`);
-  console.log(`   Try: http://localhost:${PORT}/?u=${DEFAULT_USER}\n`);
+  console.log(`   Try: http://localhost:${PORT}/?u=${DEFAULT_USER}&v=opponentname\n`);
 });

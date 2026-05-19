@@ -37,7 +37,8 @@
 - **W/D/L breakdown** with animated win-rate progress bar
 - **Tactics & Puzzle Rush** best scores
 - **Username via query param** — `?u=yournickname` — shareable links that always work
-- **In-page search form** — no URL editing needed
+- **Player comparison** — `?u=playerone&v=playertwo` for side-by-side mode metrics
+- **In-page search form** — search and compare without URL editing
 - **Responsive layout** — looks great on iPhone SE and a 4K monitor alike
 - **Dark theme** — easy on the eyes, chess.com-inspired gold accents
 - **Zero dependencies** — uses only Node.js built-in modules (`http`, `https`, `url`)
@@ -65,7 +66,8 @@ open http://localhost:3000/?u=yournickname
 | Method | Example |
 |---|---|
 | Query param | `http://localhost:3000/?u=magnuscarlsen` |
-| In-page form | Type username → hit **Search** |
+| Compare via query params | `http://localhost:3000/?u=magnuscarlsen&v=hikaru` |
+| In-page form | Type player 1 (+ optional player 2) → hit **Search** |
 | Default port | `3000` |
 | Custom port | `PORT=8080 node index.js` |
 
